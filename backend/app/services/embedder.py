@@ -1,30 +1,29 @@
+import boto3
 import os
-import pinecone
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
-pinecone.init(api_key=os.getenv("PINECONE_API_KEY"), environment=os.getenv("PINECONE_ENV"))
-index = pinecone.Index(os.getenv("PINECONE_INDEX_NAME"))
-
-model = SentenceTransformer("all-MiniLM-L6-v2")
-
-def embed_chunks(chunks, doc_id):
-    vectors = []
-    for i, chunk in enumerate(chunks):
-        embedding = model.encode(chunk).tolist()
-        metadata = {"doc_id": doc_id, "chunk_id": i, "text": chunk}
-        vectors.append((f"{doc_id}_{i}", embedding, metadata))
-    index.upsert(vectors=vectors)
-    return len(vectors)
-
-def get_relevant_chunks(question, doc_id, top_k=3):
-    query_embedding = model.encode(question).tolist()
-    results = index.query(
-        vector=query_embedding,
-        top_k=top_k,
-        include_metadata=True,
-        filter={"doc_id": {"$eq": doc_id}}
+def get_bedrock_client():
+    return boto3.client(
+        service_name="bedrock-runtime",
+        region_name=os.getenv("AWS_REGION")
     )
-    return results["matches"]
+
+def get_embedding(text):
+    client = get_bedrock_client()
+
+    body = {
+        "inputText": text
+    }
+
+    response = client.invoke_model(
+        modelId="amazon.titan-embed-text-v1",  # Or any available embedding model
+        body=str(body),
+        contentType="application/json"
+    )
+
+    result = response['body'].read()
+    embedding = eval(result)['embedding']  # Or json.loads if needed
+
+    return embedding
